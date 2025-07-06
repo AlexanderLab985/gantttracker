@@ -23,11 +23,13 @@
             const gantt = new Gantt("#gantt", tasks, {
                 on_click: task => console.log(task),
                 on_date_change: (task, start, end) => {
-                    fetch('http://localhost:3001/api/tasks', {
-                        method: 'POST',
+                    // NOTE: This requires a `PUT /api/tasks/:id` endpoint on the backend.
+                    fetch(`http://localhost:3001/api/tasks/${task.id}`, {
+                        method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(task)
-                    });
+                        body: JSON.stringify({ ...task, start, end })
+                    })
+                    .catch(err => console.error(`Failed to update task ${task.id}:`, err));
                 }
             });
         }
