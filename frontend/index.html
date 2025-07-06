@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gantt Tracker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt/dist/frappe-gantt.css" />
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        #gantt { margin: 20px; }
+    </style>
+</head>
+<body>
+    <h1 style="text-align:center">Gantt Tracker</h1>
+    <div id="gantt"></div>
+    <script src="https://cdn.jsdelivr.net/npm/frappe-gantt/dist/frappe-gantt.min.js"></script>
+    <script>
+        async function fetchTasks() {
+            const resp = await fetch('http://localhost:3001/api/tasks');
+            return resp.json();
+        }
+        function renderGantt(tasks) {
+            const gantt = new Gantt("#gantt", tasks, {
+                on_click: task => console.log(task),
+                on_date_change: (task, start, end) => {
+                    fetch('http://localhost:3001/api/tasks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(task)
+                    });
+                }
+            });
+        }
+        fetchTasks().then(renderGantt);
+    </script>
+</body>
+</html>
