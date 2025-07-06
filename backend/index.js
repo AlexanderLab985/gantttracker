@@ -23,7 +23,7 @@ app.get('/api/tasks', (req, res) => {
 
 app.post('/api/tasks', (req, res) => {
   const { name, start, end, progress, dependencies } = req.body;
-  const id = String(Date.now());
+  const id = require('crypto').randomUUID();
   const task = { id, name, start, end, progress: progress || 0, dependencies: dependencies || '' };
   tasks.push(task);
   res.status(201).json(task);
