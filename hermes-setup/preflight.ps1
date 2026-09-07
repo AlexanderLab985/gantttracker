@@ -1,9 +1,14 @@
 ﻿#Requires -Version 5.1
 <#
-    Preflight-проверка перед установкой Claude Code на Windows.
+    Preflight-проверка Windows перед установкой Hermes Desktop
+    и/или Claude Code.
 
     Скрипт НИЧЕГО не устанавливает и не изменяет — только читает систему
     и печатает отчёт с рекомендацией, каким способом ставить.
+
+    Для Hermes это предварительная проверка: авторитетный ответ о путях
+    даёт сам установщик командой
+        powershell -File install.ps1 -ShowResolvedPaths
 
     Запуск (обычный пользователь, права администратора НЕ нужны):
         powershell -ExecutionPolicy Bypass -File .\preflight.ps1
