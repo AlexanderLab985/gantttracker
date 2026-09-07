@@ -1,136 +1,196 @@
 # Установка Hermes Desktop на рабочий ПК (Windows)
 
-Runbook составлен по исходникам апстрима `NousResearch/hermes-agent`
-(HEAD 2026-09-07, версия 0.21.0) и по итогам ремонта на домашнем ПК
+Runbook по исходникам `NousResearch/hermes-agent` (HEAD 2026-09-07, 0.21.0)
+и по итогам ремонта на домашнем ПК
 (`Strategic_Center/wiki/AI/Outbox/hermes_windows_repair_handoff_2026-08-04.md`).
 
-## Главное: Desktop не скачивается, а собирается
-
-Готового инсталлятора «Hermes Desktop» в репозитории нет. Desktop — это
-Electron-приложение, которое собирает установщик из исходников:
-
-```
-apps/desktop/release/win-unpacked/Hermes.exe
-```
-
-Сборка Desktop — **опциональная стадия**, по умолчанию выключена. Включается
-флагом `-IncludeDesktop` (параметр `install.ps1`, строки 60-75). Ровно этот
-путь и использовался дома.
-
-## Кириллица: здесь каталог выбрать МОЖНО
-
-Это отличие от Claude Code, где путь жёстко зашит в профиль. У Hermes каталог
-установки — параметр:
-
-```powershell
-[string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" })
-[string]$InstallDir = $(if ($env:HERMES_HOME) { "$env:HERMES_HOME\hermes-agent" } else { "$env:LOCALAPPDATA\hermes\hermes-agent" })
-```
-
-Дома установка легла в `C:/Users/Александр/AppData/Local/hermes/hermes-agent`
-— с кириллицей в пути, со всеми вытекающими. **На рабочем ПК так не делаем:**
-задаём `HERMES_HOME` на ASCII-путь заранее, и весь класс проблем исчезает.
-
-Апстрим, справедливости ради, научился обходить 8.3-алиасы сам
-(`ConvertTo-LongPath`, `kernel32!GetLongPathNameW`, `Scripting.FileSystemObject`
-— строки 107-140). Но полагаться на обходной механизм там, где можно просто
-не создавать проблему, незачем.
+Профиль рабочего ПК — `C:\Users\Админ` — **кириллический**, как и домашний.
+Всё, что ниже про пути, обязательно к исполнению.
 
 ---
 
-## Шаг 1. Проверка машины
+## 1. Инсталлятор и выбор каталога
 
-`preflight.ps1` из этого каталога — общая проверка Windows: не-ASCII в
-`%USERPROFILE%` и `%TEMP%`, доступность 8.3-имён, кодовая страница консоли,
-Git, winget, место на диске, доступность сети.
+`Hermes-Setup` в `Downloads` — это сборка electron-builder. Конфигурация
+(`apps/desktop/package.json`):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\preflight.ps1
+```json
+"win": { "target": ["nsis", "msi"] },
+"nsis": {
+  "oneClick": false,
+  "allowToChangeInstallationDirectory": true,
+  "perMachine": false
+}
 ```
 
-## Шаг 2. Сухой прогон установщика
+`allowToChangeInstallationDirectory: true` — **вот откуда дома взялся диалог
+выбора каталога**. Установка per-user, права администратора не нужны.
 
-У `install.ps1` есть режим, который печатает вычисленные пути в JSON и
-**ничего не трогает**:
+**В диалоге указать ASCII-путь.** Например `D:\Hermes\Desktop` или
+`C:\Hermes\Desktop`. Не оставлять предложенный по умолчанию путь внутри
+`C:\Users\Админ\...`.
+
+## 2. Задать HERMES_HOME ДО запуска инсталлятора
+
+Это отдельный от GUI каталог — там живёт runtime агента, venv, состояние.
+Инсталлятор ставит только оболочку; onboarding-мастер внутри Desktop затем
+вызывает стадии `install.ps1`, а тот читает переменную окружения:
+
+```powershell
+[string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" })
+```
+
+Без переменной runtime уедет в `C:\Users\Админ\AppData\Local\hermes` — ровно
+та конфигурация, которую дома пришлось чинить VBS-лаунчером. Поэтому **перед
+запуском инсталлятора**:
+
+```powershell
+[Environment]::SetEnvironmentVariable('HERMES_HOME', 'D:\Hermes', 'User')
+```
+
+Затем перелогиниться или перезапустить проводник, чтобы переменную увидели
+новые процессы.
+
+## 3. Проверка путей
 
 ```powershell
 powershell -File install.ps1 -ShowResolvedPaths
 ```
 
-Комментарий в исходнике объясняет, зачем он: на профилях, которые Windows
-показывает через 8.3-алиас, то, что видит пользователь в проводнике, и то,
-что получает установщик, — разные строки. Это авторитетная проверка, в
-отличие от эвристик `preflight.ps1`.
+Печатает вычисленные пути в JSON и ничего не трогает. На профилях с
+8.3-алиасом то, что видно в проводнике, и то, что получает установщик, —
+разные строки; это авторитетная проверка.
 
-## Шаг 3. Задать ASCII-путь и установить
-
-```powershell
-# ASCII-путь вне профиля пользователя
-[Environment]::SetEnvironmentVariable('HERMES_HOME', 'D:\Hermes', 'User')
-$env:HERMES_HOME = 'D:\Hermes'
-
-# Установка вместе с Desktop
-irm https://hermes-agent.nousresearch.com/install.ps1 -OutFile install.ps1
-powershell -File install.ps1 -IncludeDesktop
-```
-
-Канонический однострочник апстрима — `iex (irm https://hermes-agent.nousresearch.com/install.ps1)`,
-но он не даёт передать `-IncludeDesktop`, поэтому скачиваем файл и запускаем
-с параметром.
-
-Установка склонирует репозиторий в `%HERMES_HOME%\hermes-agent`, поднимет
-Python-окружение через managed `uv`, соберёт Desktop.
+Дополнительно `preflight.ps1` из этого каталога — общая проверка машины
+(не-ASCII в путях, 8.3-имена, кодовая страница, Git, winget, сеть).
 
 ---
 
-## Что перенести с домашнего ПК
+## 4. Отдельный профиль для рабочей машины
 
-Два рабочих артефакта уже лежат в `Strategic_Center/scripts/`:
+Hermes поддерживает изолированные инстансы:
+`"""Profile management for multiple isolated Hermes instances."""`
 
-**`hermes_gateway_ascii_fallback.vbs`** — запуск gateway в обход проблем
-Windows Script Host с не-ASCII путями. Ключевое в нём:
+Каждый профиль получает собственные `memories`, `sessions`, `skills`,
+`skins`, `logs`, `plans`, `workspace`, `cron`, `home`. Живут в
+`%HERMES_HOME%\profiles\<имя>`.
 
-```vbs
-hermesHome = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%\hermes")   ' без хардкода пути
-env.Item("PYTHONIOENCODING") = "utf-8"                              ' против cp1251
+### Имя профиля
+
+Регекс из `hermes_cli/profiles.py`:
+
+```python
+_PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 ```
 
-При ASCII-пути установки он, скорее всего, не понадобится — но `PYTHONIOENCODING=utf-8`
-стоит выставить в любом случае.
+Только строчная латиница, цифры, `_` и `-`. `work`, `work-pc`, `office` —
+годятся. `Work`, `Работа` — нет.
 
-**`hermes_webui_isolated_start.ps1`** — изолированный launcher WebUI. Нужен
-только если на рабочем ПК будет разворачиваться и WebUI.
+### Создание
 
-## Порядок обновления (проверено дома)
+```powershell
+hermes profile create work --clone --description "Рабочий ПК, офисный контур"
+hermes profile use work        # залипающий выбор по умолчанию
+hermes profile alias work      # wrapper-скрипт, запуск командой work
+```
 
-1. Не запускать update из активной сессии Hermes Desktop — updater может
-   закрыть Desktop и gateway до возврата результата.
-2. Запускать update из отдельного терминала.
-3. Убедиться, что WebUI (если есть) работает из собственного `.venv`, а не
-   из `hermes-agent/venv` — иначе updater видит живой процесс внутри
+- `--clone` копирует `config.yaml`, `.env`, `SOUL.md`, навыки и
+  `memories/MEMORY.md`, `memories/USER.md` из активного профиля.
+- `--clone-all` — полная копия состояния, но без истории (`state.db`,
+  `sessions`, `backups`, `checkpoints` исключаются намеренно).
+- `--no-skills` — пустой профиль, отписан от синхронизации навыков при
+  `hermes update`.
+
+### Перенос настроек с домашнего ПК
+
+```powershell
+# на домашней машине
+hermes profile export default -o home.tar.gz
+
+# на рабочей
+hermes profile import home.tar.gz --name work
+```
+
+### Проверка, где вы находитесь
+
+```powershell
+hermes profile          # активный профиль и его каталог
+hermes profile list     # все профили
+hermes profile show work
+```
+
+---
+
+## 5. Конфликт двух машин: gateway
+
+Профили изолируют состояние **в пределах одной машины**. Между машинами они
+не синхронизируются и от коллизий не защищают.
+
+Критично: блокировка gateway — машинно-локальная.
+
+```python
+def _get_lock_dir() -> Path:
+    """Machine-local dir for token-scoped gateway locks; ``HERMES_GATEWAY_LOCK_DIR`` overrides."""
+```
+
+Домашний gateway не увидит рабочий и наоборот. Проверка
+`Another gateway instance is already running` (`gateway/run.py:4800`)
+сработает только внутри одной машины.
+
+**Следствие:** если `--clone` или `import` перенесёт `.env` с тем же токеном
+Telegram-бота, обе машины начнут забирать одни и те же сообщения. Дома
+gateway подключён к Telegram с heartbeat и шестью cron-задачами.
+
+Варианты:
+
+1. **Не поднимать gateway на рабочем ПК** — самый простой. Desktop и CLI
+   работают без него.
+2. **Отдельный бот** — свой токен в `.env` рабочего профиля.
+3. Если gateway всё же нужен с тем же ботом — разносить по времени, но это
+   хрупко и не рекомендуется.
+
+Проверить после установки:
+
+```powershell
+hermes cron list      # не должно подхватиться домашних заданий
+```
+
+---
+
+## 6. Что перенести с домашнего ПК
+
+`Strategic_Center/scripts/`:
+
+- **`hermes_gateway_ascii_fallback.vbs`** — обход проблем Windows Script Host
+  с не-ASCII путями. При ASCII-пути установки не нужен, но
+  `PYTHONIOENCODING=utf-8` из него стоит выставить в любом случае.
+- **`hermes_webui_isolated_start.ps1`** — изолированный launcher WebUI.
+  Нужен только если на рабочем ПК будет и WebUI.
+
+## 7. Порядок обновления (проверено дома)
+
+1. Не запускать update из активной сессии Desktop — updater может закрыть
+   Desktop и gateway до возврата результата.
+2. Запускать из отдельного терминала.
+3. WebUI (если есть) должен работать из своего `.venv`, а не из
+   `hermes-agent/venv`, иначе updater видит живой процесс внутри
    обновляемой installation и отменяет обновление с
    `another Hermes process is using this installation`.
-4. Если updater всё равно жалуется на активный процесс — смотреть полную
-   командную строку указанного PID, не считать автоматически, что виноват
-   gateway.
+4. Если updater жалуется на активный процесс — смотреть полную командную
+   строку указанного PID, не считать автоматически виноватым gateway.
 
-## Статус известных багов в апстриме
+## 8. Известные баги против текущего апстрима
 
-| Проблема с домашнего ПК | Состояние в апстриме на 2026-09-07 |
+| Проблема с домашнего ПК | Состояние на 2026-09-07 |
 |---|---|
-| Sharing violation / `WinError 32` | Обрабатывается широко: `update_cmd.py`, `dashboard_procs.py`, `browser_connect.py`, `profiles.py`, флаг `--force` |
-| 8.3-алиасы и не-ASCII пути | Закрыто: `ConvertTo-LongPath` + три резолвера |
-| cp1251 при чтении вывода `uv` | Явного декодирования вывода `uv` не найдено; в `install.ps1` есть только `[Console]::OutputEncoding = UTF8` (строка 101) |
-
-Третья строка — повод проверить на рабочей машине отдельно, если установка
-будет падать на стадии `uv`.
+| Sharing violation / `WinError 32` | Закрыто широко: `update_cmd.py`, `dashboard_procs.py`, `browser_connect.py`, флаг `--force` |
+| 8.3-алиасы, не-ASCII пути | Закрыто: `ConvertTo-LongPath` + три резолвера |
+| cp1251 при чтении вывода `uv` | Явного декодирования вывода `uv` не найдено; только `[Console]::OutputEncoding = UTF8` (install.ps1:101) |
 
 ---
 
 ## Ограничение этой сессии
 
-Веб-сессия Claude Code работает в облачном контейнере и до вашего ПК не
-дотягивается. Чтобы установку выполнял я, а не вы руками, на рабочем ПК
-нужен Claude Code с Remote Control — тот же механизм, что уже работает на
-домашней машине (сессия «Hermes обновление», `environment_kind: bridge`).
-Порядок установки самого Claude Code — в `CLAUDE_CODE.md` рядом.
+Веб-сессия работает в облачном контейнере и до вашего ПК не дотягивается.
+Чтобы установку выполнял я, нужен Claude Code с Remote Control на рабочей
+машине — тот же мост, что работает дома. Порядок в `CLAUDE_CODE.md`.
